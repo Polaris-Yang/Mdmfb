@@ -1,7 +1,7 @@
 
 from droplet_gym.envs import *
 import time
-env = Dropletenv(10,10,10)
+env = Dropletenv(10,10,5)
 # env=wrappers.Monitor(env,'./experiment-1')
 # print(env.state)
 agent_num = env.agent_number
@@ -16,7 +16,7 @@ for i in range(10):
         obs_n, reward_n, done_n, info_n = env.step(action)
         env.render()
         time.sleep(1)
-        # print(env.state)
+        print(env.state)
         # print('reward',reward_n)
         # done_n=np.array(done_n)
         # flag=np.all(done_n)

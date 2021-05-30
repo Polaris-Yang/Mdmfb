@@ -330,7 +330,7 @@ class Dropletenv(gym.Env):
                 a=self._is_grid_goal(temp)
                 if a:
                 #终点
-                    rect.set_color(0.1, 0.6, 1.0/self.agent_number*a)
+                    rect.set_color(1.0-1.0/self.agent_number*a, 0.5+0.5/self.agent_number*a, 1.0/self.agent_number*a)
                 elif self._isTouchingModule(temp):
                 #block
                     rect.set_color(0.0,0.0,0.0)
@@ -340,7 +340,7 @@ class Dropletenv(gym.Env):
                 self.viewer.add_geom(rect)
         for i in range(self.agent_number):
             self.agent[i] = rendering.make_circle(u_size/2.5, 50, True)
-            self.agent[i].set_color(0.1, 0.6+0.05, 1.0/self.agent_number*(i+1))
+            self.agent[i].set_color(1.0-1.0/self.agent_number*(i+1), 0.65+0.35/self.agent_number*(i+1), 1.0/self.agent_number*(i+1))
             self.viewer.add_geom(self.agent[i])
             self.agenttrans[i]=rendering.Transform()
             self.agent[i].add_attr(self.agenttrans[i])
@@ -353,7 +353,7 @@ class Dropletenv(gym.Env):
         self.viewer.close()
 
 if __name__ == '__main__':
-    env = Dropletenv()
+    env = Dropletenv(5,5,3)
     # env=wrappers.Monitor(env,'./experiment-1')
     # print(env.state)
     agent_num=env.agent_number
