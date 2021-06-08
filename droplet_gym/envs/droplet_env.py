@@ -2,11 +2,13 @@ import math
 import gym
 from gym import spaces
 from gym.utils import seeding
+from enum import IntEnum
 import numpy as np
 import time
 import random
 import copy
 from gym.envs.classic_control import rendering
+from gym.spaces import Discrete, Box
 from gym import wrappers
 import os
 import sys
@@ -43,6 +45,13 @@ class Module:
             return False
         else:
             return True
+#0 静止 1上 2下 3左 4右
+class Direction(IntEnum):
+    Stall = 0
+    UP    = 1
+    DOWN  = 2
+    LEFT  = 3
+    RIGHT = 4
 
 class Dropletenv(gym.Env):
     metadata = {
@@ -51,11 +60,13 @@ class Dropletenv(gym.Env):
     #环境初始化
     def __init__(self,width,length,drop_num,block_num=0):
         super(Dropletenv,self).__init__()
+
         self.width=width #vertical cell number
         self.length=length # horizon cell number
-        self.single_action_space=spaces.Discrete(5) #单个液滴动作空间
-        self.action_space=[]
-        self.observation_space=[]
+        #单个液滴动作空间
+        self.actions=Direction
+        self.action_space= Discrete(len(self.actions))
+        self.observation_space=Box(low=0,high=drop_num,shape=(length,width,3),dtype='uint8')
         self.reward_range=(-10,10)
         self.past_location=None
         #液滴数量
@@ -66,9 +77,9 @@ class Dropletenv(gym.Env):
         self.modules=self._genRandomModules()
         self.global_state=self._get_global_state() #全局状态
         #最大运行步长
-        self.max_step=20
+        self.max_step=100
         #绘图用
-        self.agent=[None]*self.agent_number
+        self.agent_redender=[None]*self.agent_number
         self.agenttrans=[None]*self.agent_number
         self.step_number = 0  #步长
         self.u_size=40 #size for cell pixels
@@ -195,7 +206,7 @@ class Dropletenv(gym.Env):
         self._updatePosition(action)
         self.state = np.vstack((self.agents_current_positon, self.agents_goal))#液滴状态
         obs_n = self._get_observation()
-        if self.step_number>self.max_step:
+        if self.step_number>=self.max_step:
             done_n = [True]*self.agent_number
         else:
             done_n = self._isComplete()
@@ -210,17 +221,19 @@ class Dropletenv(gym.Env):
         erro=np.asarray([-0.1 if i < 0 else -0.5 for i in lat_distance-pre_distance])
         #done 取反数字化
         reverse_done=np.asarray([0 if i else 1 for i in done_n])
+        # print('reverse_done',reverse_done)
         #单个智能体的奖励值
         reward_n=erro*reverse_done-sta-dy
+        # print('reward_n',reward_n)
         #平均奖励值
-        ave_reward=[np.sum(reward_n)/len(reward_n)]*self.agent_number
+        # ave_reward=[np.sum(reward_n)/len(reward_n)]*self.agent_number
+        ave_reward = np.sum(reward_n) / len(reward_n)
         info_n={}
-
         #debug
-        a=self.global_state
-        print('当前状态1\n',a[:,:,0])
-        print('当前状态2\n',a[:,:,1])
-        print('当前状态3\n',a[:,:,2])
+        # a=self.global_state
+        # print('当前状态1\n',a[:,:,0])
+        # print('当前状态2\n',a[:,:,1])
+        # print('当前状态3\n',a[:,:,2])
         # print('单个液滴奖励',reward_n)
         # print('平均奖励',ave_reward)
         # print("前一次距离",pre_distance)
@@ -231,7 +244,10 @@ class Dropletenv(gym.Env):
         # print('动态',dy)
         # print(self.agents_current_positon)
         # print('----------------------------------------')
-        return obs_n , ave_reward , done_n, info_n
+
+        # return obs_n , ave_reward , done_n, info_n
+        return ave_reward,np.all(done_n),info_n
+
 
     # def _get_global_state(self):
     #     """
@@ -277,7 +293,7 @@ class Dropletenv(gym.Env):
             # temp=np.hstack((self.global_state,np.array([i])))
             # obs_n.append(temp)
             #修改2021.4.20
-            obs_n.append(self.global_state)
+            obs_n.append(self.global_state.reshape(-1))
         return obs_n
     def _compute_distance(self,position):
         # (agent_num,)
@@ -317,6 +333,7 @@ class Dropletenv(gym.Env):
             return None
         u_size = 40
         m=2
+        img=np.zeros([self.length,self.width,3])
         if self.viewer is None :
             self.viewer = rendering.Viewer(self.env_length , self.env_width)
         for x in range(self.length):
@@ -331,50 +348,70 @@ class Dropletenv(gym.Env):
                 if a:
                 #终点
                     rect.set_color(1.0-1.0/self.agent_number*a, 0.5+0.5/self.agent_number*a, 1.0/self.agent_number*a)
+                    img[x][y]=np.multiply([1.0-1.0/self.agent_number*a, 0.5+0.5/self.agent_number*a, 1.0/self.agent_number*a],255)
                 elif self._isTouchingModule(temp):
                 #block
                     rect.set_color(0.0,0.0,0.0)
+                    img[x][y] = [0.0,0.0,0.0]
                 else:
                 #普通格子
                     rect.set_color(0.9,0.9,0.9)
+                    img[x][y] = np.multiply([0.9,0.9,0.9],255)
                 self.viewer.add_geom(rect)
         for i in range(self.agent_number):
-            self.agent[i] = rendering.make_circle(u_size/2.5, 50, True)
-            self.agent[i].set_color(1.0-1.0/self.agent_number*(i+1), 0.65+0.35/self.agent_number*(i+1), 1.0/self.agent_number*(i+1))
-            self.viewer.add_geom(self.agent[i])
+            self.agent_redender[i] = rendering.make_circle(u_size/2.5, 50, True)
+            self.agent_redender[i].set_color(1.0-1.0/self.agent_number*(i+1), 0.65+0.35/self.agent_number*(i+1), 1.0/self.agent_number*(i+1))
+            self.viewer.add_geom(self.agent_redender[i])
             self.agenttrans[i]=rendering.Transform()
-            self.agent[i].add_attr(self.agenttrans[i])
+            self.agent_redender[i].add_attr(self.agenttrans[i])
         for i in range(self.agent_number):
             [x,y]=self.agents_current_positon[i]
-            self.agenttrans[i].set_translation((x+0.5)*u_size, (y+0.5)*u_size)    
-        return self.viewer.render( return_rgb_array = mode=='rgb_array')
-    
+            img[x][y]=np.multiply([1.0-1.0/self.agent_number*(i+1), 0.65+0.35/self.agent_number*(i+1), 1.0/self.agent_number*(i+1)],255)
+            self.agenttrans[i].set_translation((x+0.5)*u_size, (y+0.5)*u_size)
+        return  self.viewer.render() if mode=='human' else img
+
+
+
+
+#2021 531添加
+    def get_env_info(self):
+        env_info={"n_actions":5,
+                  "n_agents":self.agent_number,
+                  "state_shape":self.global_state.flatten().shape[-1],
+                  "obs_shape":self.global_state.flatten().shape[-1],
+                  "episode_limit": self.max_step}
+        return  env_info
+
     def close(self):
-        self.viewer.close()
+        if self.viewer:
+            self.viewer.close()
 
 if __name__ == '__main__':
     env = Dropletenv(5,5,3)
-    # env=wrappers.Monitor(env,'./experiment-1')
-    # print(env.state)
-    agent_num=env.agent_number
-    for i in range(10):
-        env.reset()
-        # action=[1]*env.agent_number
-        for j in range(10):
-            action=[]
-            for k in range(agent_num):
-                action.append(env.single_action_space.sample())
-        # print(action)
-            obs_n , reward_n,done_n,info_n=env.step(action)
-            env.render()
-            time.sleep(1)
-            # print(env.state)
-            # print('reward',reward_n)
-            # done_n=np.array(done_n)
-            # flag=np.all(done_n)
-            # if flag:
-            #     print("has break")
-            #     break
-        # print(obs_n)
+    env.reset()
+    # # env=wrappers.Monitor(env,'./experiment-1')
+    # # print(env.state)
+    # agent_num=env.agent_number
+    # for i in range(10):
+    #     env.reset()
+    #     # action=[1]*env.agent_number
+    #     for j in range(10):
+    #         action=[]
+    #         for k in range(agent_num):
+    #             action.append(env.action_space.sample())
+    #     # print(action)
+    #         env.step(action)
+    #         a=env.render(mode='rgb')
+    #         print(a)
+    #         time.sleep(1)
+    #         # print(env.state)
+    #         # print('reward',reward_n)
+    #         # done_n=np.array(done_n)
+    #         # flag=np.all(done_n)
+    #         # if flag:
+    #         #     print("has break")
+    #         #     break
+    #     # print(obs_n)
+    print(env.get_env_info())
     env.close()
         
